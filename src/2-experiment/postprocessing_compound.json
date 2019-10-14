@@ -1,0 +1,20 @@
+{
+  "grdc": {
+      "in_fns": "[os]?*.nc",
+      "extract_fn": "20170124_GRDC_Stations_meta_snap_2dist1e+04_1upa5.0e-01.csv",
+      "var_name": ["outflw", "sfcelv"], 
+      "dim": "grdc_id", 
+      "csv_xdim": "cmf_lon", 
+      "csv_ydim": "cmf_lat", 
+      "keep_attrs": true
+  },
+  "rivmth": {
+      "in_fns": "[os]?*.nc",
+      "extract_fn": "rivmth_upa1e+09_dist1e+04.csv",
+      "var_name": ["outflw", "sfcelv"], 
+      "dim": "id", 
+      "csv_xdim": "lon_15min", 
+      "csv_ydim": "lat_15min", 
+      "keep_attrs": true
+  }
+}
