@@ -13,10 +13,14 @@ import numpy as np
 import pandas as pd
 import math
 import xarray as xr
+import dask
 import geopandas as gp
 import fiona
 import click
 import datetime
+import cftime
+if not xr.__version__ >= '0.12.2':
+    raise ImportError('Xarray version >= 0.12.2 required. Update package using "conda update xarray -c conda-forge"')
 
 @click.command()
 @click.argument('in_fns', nargs=-1, type=click.Path(readable=True, resolve_path=True))
@@ -133,7 +137,7 @@ def nc_extract(in_fns, out_fn, extract_fn, var_name, dim='id',
             keep_attrs=keep_attrs, global_attrs=global_attrs,
             num_workers=num_workers)
 
-def nc_points_ts(in_nc_fns, out_nc_fn, mapping, var_name=['outflw'],
+def nc_points_ts(in_nc_fns, out_nc_fn, mapping, var_name,
                 nc_xdim='lon', nc_ydim='lat', nc_tdim='time', chunksize=100,
                 csv_xdim='snap_lon', csv_ydim='snap_lat',
                 keep_attrs=False, global_attrs={},  encoding={}, num_workers=16):
@@ -147,19 +151,23 @@ def nc_points_ts(in_nc_fns, out_nc_fn, mapping, var_name=['outflw'],
     # use either a string glob in the form “path/to/my/files/*.nc” or an explicit list of files to open
     # click.echo('read nc data from: \n "{}"'.format('",\n "'.join(in_nc_fns)))
     chunks = {nc_tdim: chunksize}
-    ds = xr.open_mfdataset(in_nc_fns, chunks=chunks)
+    for fn in in_nc_fns:
+        ds = xr.open_dataset(fn, chunks=chunks, decode_times=False)
+        cftime = xr.coding.times.decode_cf_datetime(ds[nc_tdim], ds[nc_tdim].attrs['units'], use_cftime=True)
+        ds[nc_tdim] = xr.Variable(nc_tdim, cftime)
+        dss.append(ds)
+    ds = xr.concat(dss, dim=nc_tdim).sortby(nc_tdim).chunk(chunks)
     # check if all var_names in dataset
     check_var_names = np.array([name in ds.variables.keys() for name in var_name])
     if not np.all(check_var_names):
         missing = np.array(var_name)[check_var_names==False].tolist()
         raise ValueError('Variable(s) {} not in netcdf dataset'.format(', '.join(missing)))
     # read ts at lat lon coordinates (snapped to the cell centers of the grid)
-    x, y = mapping[csv_xdim].values, mapping[csv_ydim].values
-    slice_args = {nc_xdim: x, nc_ydim: y, 'dim': out_dim}
-    #TODO replace deprecated sel_points method
-    ds_pnt = ds[var_name].sel_points(method='nearest', **slice_args)
-    # add new dimension variable
-    ds_pnt[out_dim] = xr.Variable([out_dim], mapping.index.values)
+    y = xr.DataArray(mapping[csv_ydim].values, dims=out_dim)
+    x = xr.DataArray(mapping[csv_xdim].values, dims=out_dim)
+    sel_args = {nc_xdim: x, nc_ydim: y, 'dim': out_dim, 'method':'nearest'}
+    ds_pnt = ds[var_name].sel(**sel_args)
+    ds_pnt[out_dim] = xr.Variable([out_dim], mapping.index.values) # add new dimension variable
     # merge csv metadata if keep_attrs
     if keep_attrs:
         rm_dict = {nc_xdim: nc_xdim+'_nc', nc_ydim: nc_ydim+'_nc'}
@@ -170,17 +178,16 @@ def nc_points_ts(in_nc_fns, out_nc_fn, mapping, var_name=['outflw'],
     # save to netcdf (here's were all the work takes place)
     # click.echo('save time series data to "{}"'.format(out_nc_fn))
     ds_out.attrs = global_attrs
-    encoding = ds.encoding
-    encoding.update({name: {'zlib': True} for name in var_name})
+    encoding = {name: {'zlib': True} for name in var_name}
     ds_out.sortby(nc_tdim).to_netcdf(out_nc_fn, encoding=encoding)
     # close files and finish
     ds.close()
     click.echo('finished extracting time series point data')
     return None
 
-def nc_region_ts(in_nc_fns, out_nc_fn, region_gdf, var_name=['fldfrc'],
+def nc_region_ts(in_nc_fns, out_nc_fn, region_gdf, var_name,
                  mask=None, reducer='mean', nc_xdim='lon', nc_ydim='lat', nc_tdim='time',
-                 chunksize=50, keep_attrs=False, global_attrs={}, num_workers=16):
+                 chunksize=100, keep_attrs=False, global_attrs={}, num_workers=16):
     reducers = ['mean', 'sum']
     if reducer not in reducers:
         msg = 'reducer not implemeted, select from {}'.format(', '.join(reducers))
@@ -193,7 +200,15 @@ def nc_region_ts(in_nc_fns, out_nc_fn, region_gdf, var_name=['fldfrc'],
 
     # click.echo('read nc data from: \n "{}"'.format('",\n "'.join(in_nc_fns)))
     chunks = {nc_tdim: chunksize}
-    ds = xr.open_mfdataset(in_nc_fns, chunks=chunks)
+    dss = []
+    # loop to use cftime instead of np.datetime which is out of range for part of the files
+    for fn in in_nc_fns:
+        ds = xr.open_dataset(fn, chunks=chunks, decode_times=False)
+        cftime = xr.coding.times.decode_cf_datetime(ds[nc_tdim], ds[nc_tdim].attrs['units'], use_cftime=True)
+        ds[nc_tdim] = xr.Variable(nc_tdim, cftime)
+        dss.append(ds)
+    ds = xr.concat(dss, dim=nc_tdim).sortby(nc_tdim).chunk(chunks)
+
     # check if all var_names in dataset
     check_var_names = np.array([name in ds.variables.keys() for name in var_name])
     if not np.all(check_var_names):
@@ -231,8 +246,7 @@ def nc_region_ts(in_nc_fns, out_nc_fn, region_gdf, var_name=['fldfrc'],
     ds_out = ds_out.transpose(nc_tdim, nc_ydim, nc_xdim, out_dim)
     # save to file
     # click.echo('save time series data to "{}"'.format(out_nc_fn))
-    encoding=ds.encoding
-    encoding.update({name: {'zlib': True} for name in var_name})
+    encoding = {name: {'zlib': True} for name in var_name}
     ds_out.attrs = global_attrs
     ds_out.sortby(nc_tdim).to_netcdf(out_nc_fn, encoding=encoding)
     # close files and finish

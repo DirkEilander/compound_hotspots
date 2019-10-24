@@ -12,7 +12,8 @@ import rasterio
 import numpy as np
 # local libraries
 from cmftools.cmf_index import model_xy, outlet_xy, model_index
-from nbops import read_dd_raster, catchment_map
+from .nbops.nb_io import read_dd_raster
+from .nbops.dd_ops import catchment_map
 
 
 def get_outlets(fn_nextxy, fn_lonlat, sample_dict={}, fn_out=None, 
