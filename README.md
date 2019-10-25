@@ -14,8 +14,8 @@ Project Organization
     ├── config
     ├── data
     │   ├── 1-external
-    │   ├── 2-processed
-    │   ├── 3-output
+    │   ├── 2-preprocessed
+    │   ├── 3-model_output
     │   └── 4-postprocessed
     ├── docs
     ├── reports

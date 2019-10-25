@@ -99,3 +99,4 @@ bin/
 
 # exclude external models from source control
 /src/0-external/
+/reports/figures

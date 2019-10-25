@@ -73,10 +73,10 @@ if not isfile(fn_peaks_rp):
     print(basename(fn_peaks_rp))
     ds_rp = xs.xinterp_rps(wl_peaks, rp=rps_out, nyears=nyears)
     ds_rp.to_netcdf(fn_peaks_rp)
-fn_peaks_rp_ci = join(ddir, f'rivmth_peaks_q{q}d{min_dist}_rp_ci.nc')
+fn_peaks_rp_ci = join(ddir, f'rivmth_peaks_q{q}d{min_dist}_rp_ci_N1e5.nc')
 if not isfile(fn_peaks_rp_ci):
     print(basename(fn_peaks_rp_ci))
-    ds_rp_ci = xs.xinterp_rps_ci(wl_peaks, rp=rps_out, nyears=nyears, n_samples=1000, alphas=alphas)
+    ds_rp_ci = xs.xinterp_rps_ci(wl_peaks, rp=rps_out, nyears=nyears, n_samples=10000, alphas=alphas)
     ds_rp_ci.to_netcdf(fn_peaks_rp_ci)
 ds_peaks.close()
 ds.close()
