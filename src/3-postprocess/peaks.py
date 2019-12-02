@@ -112,6 +112,45 @@ def annual_max(da, min_dist=1, dim='time', reduce=False):
         peaks_am = peaks_grp.max(dim=dim)
     return peaks_am
 
-
+def nanpercentile(da, q, dim='time', interpolation='linear'):
+    """Returns the qth percentile of the data along the specified core dimension,
+    while ignoring nan values.
+    
+    Parameters
+    ----------
+    da: xarray DataArray
+        Input data array
+    q : float in range of [0,100] (or sequence of floats)
+        Percentile to compute, which must be between 0 and 100 inclusive.
+    dim : str, optional
+        name of the core dimension (the default is 'time')
+    interpolation : {'linear', 'lower', 'higher', 'midpoint', 'nearest'}
+        This optional parameter specifies the interpolation method to
+        use when the desired quantile lies between two data points
+    
+    Returns
+    -------
+    percentile : xarray DataArray
+        The core dimension is reduce to quantiles and returned at the last dimension.
+    """
+    def _nanpercentile(*args, **kwargs):
+        """nanpercentile, but with q moved to the last axis"""
+        return np.moveaxis(np.nanpercentile(*args, **kwargs), 0, -1)
+    # nanpercentile parameters
+    q = np.atleast_1d(q)
+    q_kwargs = dict(q=q, axis=-1, interpolation=interpolation)
+    # apply_ufunc parameters
+    kwargs = dict(               
+        input_core_dims=[[dim]], 
+        output_core_dims=[['percentile']],
+        dask='parallelized', 
+        output_dtypes=[float],    
+        output_sizes={'percentile': q.size} # on output, <dim> is reduced to length q.size 
+    )
+    if 'percentile' in da.coords:
+        da = da.drop('percentile')
+    percentile = xr.apply_ufunc(_nanpercentile, da.chunk({dim: -1}), kwargs=q_kwargs, **kwargs)
+    percentile['percentile'] = xr.Variable('percentile', q)
+    return percentile.squeeze() # if q.size=1 remove dim
 
 

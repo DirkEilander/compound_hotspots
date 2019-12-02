@@ -19,6 +19,8 @@ scen_rm = {
     'cmpnd':   'surge', 
     'runoff':  'seas',
     'tide':    'tide',
+    'msl':     'msl'
+    # 'surge':   'surge',
 }
 var_rm = {
     'outflw': 'Q',
@@ -35,7 +37,7 @@ glob_attrs = dict(
 
 # read coupling csv
 coupling = pd.read_csv(fn_csv_coupling, index_col='index')
-
+coupling['z0'] = (coupling['elevtn'] - coupling['rivhgt'])
 # check if all outputs are complete
 fns = glob.glob(join(ddir, 'rivmth_*_mswep_*_v362_1980-2014*.nc'))
 # check if all complete
@@ -46,7 +48,7 @@ for fn in fns:
 
 # combine cmf outputs
 model = ['anu', 'cnrs', 'ecmwf', 'nerc', 'jrc'] #, 'univu', 'univk']
-scenarios = ['msl', 'runoff', 'tide', 'cmpnd'] # 'surge',
+scenarios = ['msl', 'runoff', 'tide', 'cmpnd', 'surge']
 rm_coords = {'id': 'rivmth_idx'}
 chunks = {'time': -1, 'id':100}
 ds_m = []
@@ -64,14 +66,12 @@ ds_cmf['index'] = xr.DataArray(dims=['rivmth_idx'], data=coupling.index.values, 
 ds_cmf = ds_cmf.swap_dims({'rivmth_idx': 'index'})
 ds_cmf['rivmth_lat'] = xr.Variable(['index'], coupling['rivmth_lat'].values)
 ds_cmf['rivmth_lon'] = xr.Variable(['index'], coupling['rivmth_lon'].values)
-ds_cmf = ds_cmf.set_coords(['rivmth_lat', 'rivmth_lon'])
+ds_cmf['z0'] = xr.Variable(['index'], coupling['z0'].values)
+ds_cmf = ds_cmf.set_coords(['rivmth_lat', 'rivmth_lon', 'z0'])
 # select and rename scenarios
-ds_cmf_sel = xr.merge([
-    ds_cmf[['WSE', 'Q']].sel(scen=list(scen_rm.keys())),
-    ds_cmf[['Q']].sel(scen='msl').drop('scen').rename({'Q':'Qmsl'}) # take discharge from msl scenario
-])
+ds_cmf_sel = ds_cmf[['WSE', 'Q']].sel(scen=list(scen_rm.keys()))
 ds_cmf_sel['scen'] = xr.Variable('scen', [scen_rm.get(s,s) for s in ds_cmf_sel['scen'].data])
-
+ds_cmf_sel['scen'].attrs.update(description='scenario analysis varying the downstream boundary condition to CaMa-Flood')
 # combine gtsm outputs
 rm = {
     'station_y_coordinate': 'gtsm_lat', 

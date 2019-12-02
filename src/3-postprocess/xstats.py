@@ -4,48 +4,55 @@ import pandas as pd
 from scipy import stats
 from scipy.interpolate import interp1d
 from lmoments3 import distr
+import dask
+import dask.bag as db
+import warnings
+warnings.simplefilter("ignore")
 
 
 def weibull(peaks, nyears=None):
     peaks = peaks[np.isfinite(peaks)]
     peaks_rank = stats.rankdata(-1 * peaks, method='ordinal')
     if nyears is not None:
-        lambd = peaks.size / nyears 
+        frec = peaks.size / nyears 
     else:
-        lambd = 1.
-    rp = float((peaks.size/lambd)+1) / peaks_rank
+        frec = 1.
+    rp = float((peaks.size/frec)+1) / peaks_rank
     return rp, peaks
 
 def _lm_fit(peaks, rp, fdist=distr.gpa, nyears=None):
     peaks = peaks[np.isfinite(peaks)]
     assert peaks.size > 0
     pars = fdist.lmom_fit(peaks)
-    pars_out = np.array([v for v in pars.values()])
     rv = fdist(**pars) 
-    lambd = 1.
+    frec = 1.
     if nyears is not None:
-        lambd = peaks.size / nyears 
-    q = 1 - 1. / (rp*lambd)
-    return rv.ppf(q), pars_out
+        frec = peaks.size / nyears 
+    if 'shape' not in pars:
+        pars.update(shape=0)
+    pars_out = np.array([pars[k] for k in ['shape', 'loc', 'scale']]) 
+    return rv.isf(frec / rp), pars_out
 
-def _lm_fit_ci(peaks, rp, fdist=distr.gpa, nyears=None, n_samples=1000, alphas=np.array([0.1, 0.9]) ):
-    def bootstrap_indexes(data, n_samples=1000):
-        return np.random.randint(data.shape[0], size=(n_samples, data.shape[0]))
+def _lm_fit_ci(peaks, rp, fdist=distr.gpa, nyears=None, n_samples=1000, alphas=np.array([0.1, 0.9])):   
     peaks = peaks[np.isfinite(peaks)]
-    lambd = 1.
+    frec = 1.
     if nyears is not None:
-        lambd = peaks.size / nyears 
-    q = 1 - 1. / (rp*lambd)
+        frec = peaks.size / nyears
+    def isf(pars):
+        return fdist(**pars[1]).isf(frec/rp)
+    def bootstrap_indexes(data, n_samples):
+        return np.random.randint(data.shape[0], size=(n_samples, data.shape[0]))
+    # estimate parameters using bootstrap sample
     bootindexes = bootstrap_indexes(peaks, n_samples=n_samples)
     pars = pd.DataFrame.from_records(np.apply_along_axis(fdist.lmom_fit, arr=peaks[bootindexes], axis=-1))
     par0 =  pd.DataFrame.from_records([fdist.lmom_fit(peaks)]).loc[0]
     bias = par0 - pars.mean()
     pars += bias
-    fdist_ppf = lambda pars: fdist(*pars).ppf(q)
-    stat = np.apply_along_axis(fdist_ppf, arr=pars.values, axis=-1)
-    stat_sorted = np.apply_along_axis(np.sort, arr=stat, axis=0)
+    # get ci
+    stat = np.vstack(db.from_sequence(pars.iterrows(), npartitions=10).map(isf).compute())
+    stat.sort(axis=0)
     nvals = np.nan_to_num(np.round((n_samples-1)*alphas)).astype('int')
-    ci = stat_sorted[nvals, ...]    
+    ci = stat[nvals, ...]    
     return ci
 
 def _interp_ev(peaks, vals, nyears):
@@ -55,7 +62,8 @@ def _interp_ev(peaks, vals, nyears):
     logrps = np.log10(rps)
     kwargs = dict(
         kind='linear', bounds_error=False, assume_sorted=True,
-        fill_value=(logrps.min(), logrps.max())
+        # fill_value=(logrps.min(), logrps.max())
+        fill_value=np.nan
     )
     rp_out = 10**interp1d(peaks, np.log10(rps), **kwargs)(vals)
     return rp_out
@@ -66,7 +74,8 @@ def _interp_rps(peaks, rp, nyears):
     rps_in, peaks = weibull(peaks, nyears=nyears)
     kwargs = dict(
         kind='linear', bounds_error=False, assume_sorted=True,
-        fill_value='extrapolate'
+        # fill_value='extrapolate'
+        fill_value=np.nan
     )
     peaks_out = interp1d(np.log10(rps_in), peaks, **kwargs)(np.log10(rp))
     return peaks_out
@@ -98,7 +107,7 @@ def xlm_fit(da_peaks, fdist=distr.gpa, nyears=None, rp=np.array([2,5,10,25]), di
         vectorize=True
     )
     da_rp, da_par = xr.apply_ufunc(_lm_fit, da_peaks, kwargs=p2r_kwargs, **kwargs)
-    da_par.name = 'gev'
+    da_par.name = 'params'
     da_out = xr.merge([da_rp, da_par])
     da_out['rp'] = xr.Variable('rp', rp)
     da_out['par'] = xr.Variable('par', ['shape', 'loc', 'scale'])
@@ -229,6 +238,23 @@ def xrankdata(da, dim='time', method='average'):
     )
     rank = xr.apply_ufunc(_rankdata, da, kwargs=dict(method=method), **kwargs)
     return rank
+
+def xtopn_idx(da, n):
+    def _idx_topn(x, n=50):
+        return np.argsort(x)[::-1][:n]
+    
+    da_out = xr.apply_ufunc(
+        _idx_topn, 
+        da, 
+        kwargs=dict(n=n),
+        input_core_dims=[['time']], 
+        output_core_dims=[['rank']], 
+        vectorize=True, 
+        dask='allowed', 
+        output_dtypes=[int],
+        output_sizes={'rank':n}
+    )
+    return da_out
 
 def xnanpercentile(da, q, dim='time', interpolation='linear'):
     """Returns the qth percentile of the data along the specified core dimension,
