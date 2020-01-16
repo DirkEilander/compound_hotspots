@@ -15,7 +15,7 @@ min_dist = 14
 nyears = 35
 window_sizes = [0, 1, 2]
 vars_ = ['WSE', 'Htide', 'Hskewsurge', 'Hsurge', 'Htot', 'Q']
-scenarios = ['surge', 'seas', 'tide']
+scenarios = ['surge', 'seas', 'tide', 'msl']
 alpha = 0.05
 rps_out = np.array([1.1, 1.5, 2, 5, 10, 20, 30, 50, 100])
 chunks = {'ensemble':-1, 'scen':-1, 'time': -1, 'index':100}
@@ -102,13 +102,19 @@ for wdw in window_sizes[1:]:
         wl_main_driver = wl_am_drivers.sel(driver=main_driver)
         wl_main_driver.name = 'h_driver'
         wl_diff_sign = wl_diff_sign.sel(driver=main_driver)
-        wl_diff_sign.name = 'sign_a05'
+        wl_diff_sign.name = 'sign'
+        wl_diff_sign.attrs.update(alpha=alpha)
+        ds_ratio  = (ds['h'].sel(driver=drivers).mean('rank') / ds['h'].sel(driver='WSE').mean('rank')) * 100
+        ds_ratio = xr.merge([
+            ds_ratio.sel(driver=d).drop('driver').to_dataset().rename({'h': f'h_ratio_{d}'}) for d in drivers
+        ])
         ds_out = xr.merge([
             wl_main_driver,
             wl_am_act,
-            wl_diff_sign
+            wl_diff_sign,
+            ds_ratio
         ]).reset_coords()
-        ds_out['h_reldiff'] = ((ds_out['h_actual']-ds_out['h_driver']) / ds_out['h_actual']) * 100
+        ds_out['h_ratio'] = (ds_out['h_driver'] / ds_out['h_actual']) * 100
         ds_out.to_netcdf(fn_peaks_wdw_stats)
 
 # extreme value analysis (fit gumbel)
