@@ -1,32 +1,28 @@
-import xarray as xr
-import numpy as np 
-import pandas as pd
-from scipy import stats
+"""NOTE: currenlty only gumbel fits are supported!"""
 from lmoments3 import distr
-# import dask
-# import dask.bag as db
-# import warnings
-# warnings.simplefilter("ignore")
+import xarray as xr
+import pandas as pd
+import numpy as np 
+from scipy import stats
 
 def weibull(peaks, nyears=None):
+    """weibull plot position"""
     peaks = peaks[np.isfinite(peaks)]
-    peaks_rank = stats.rankdata(-1 * peaks, method='ordinal')
-    if nyears is not None:
-        frec = peaks.size / nyears 
-    else:
-        frec = 1.
-    rp = float((peaks.size/frec)+1) / peaks_rank
-    return rp, peaks
+    peaks_rank = stats.rankdata(peaks, 'ordinal')
+    P = peaks_rank/(peaks.size+1)
+    freq = 1. if nyears is None else peaks.size / nyears
+    rp = 1/(1-P) * 1/freq
+    return rp
 
-def _lm_fit(peaks, rp, fdist=distr.gpa, nmin=3, nyears=None):
+def _lm_fit(peaks, rp, fdist=distr.gum, nmin=3, nyears=None):
     _peaks = peaks[np.isfinite(peaks)]
     success = False
     if _peaks.size >= nmin and _peaks.std() > 0: # min 30 values for robust estimate
         try:
             pars = fdist.lmom_fit(_peaks)
             rv = fdist(**pars) 
-            frec = 1. if nyears is None else _peaks.size / nyears
-            ev = rv.isf(frec / rp)
+            freq = 1. if nyears is None else _peaks.size / nyears
+            ev = rv.isf(freq / rp) # 1/(1-P) = freq / rp
             success = True
         except ValueError:
             pass
@@ -37,7 +33,7 @@ def _lm_fit(peaks, rp, fdist=distr.gpa, nmin=3, nyears=None):
     pars_out = np.array([pars.get(k,np.nan) for k in ['shape', 'loc', 'scale']]) 
     return ev, pars_out
 
-def xlm_fit(da_peaks, fdist=distr.gpa, nmin=3, nyears=None, rp=np.array([2,5,10,25]), dim='time'):
+def xlm_fit(da_peaks, fdist=distr.gum, nmin=3, nyears=None, rp=np.array([2,5,10,25]), dim='time'):
     rp = np.atleast_1d(rp)
     kwargs = dict(rp=rp, nmin=nmin, nyears=nyears, fdist=fdist)
     # apply_ufunc parameters
@@ -58,33 +54,36 @@ def xlm_fit(da_peaks, fdist=distr.gpa, nmin=3, nyears=None, rp=np.array([2,5,10,
     da_out.coords['par'] = xr.Variable('par', ['shape', 'loc', 'scale'])
     return da_out
 
-def _lm_fit_ci(peaks, rp, fdist=distr.gpa, nyears=None, n_samples=1000, alphas=np.array([0.1, 0.9])):   
+def _lm_fit_ci(peaks, rp, fdist=distr.gum, nyears=None, n_samples=1000, alphas=np.array([0.1, 0.9])):   
     peaks = peaks[np.isfinite(peaks)]
     alphas = np.asarray(alphas)
     if peaks.size > 0 and peaks.std() > 0:
-        frec = 1. if nyears is None else peaks.size / nyears
+        freq = 1. if nyears is None else peaks.size / nyears
+        par0 =  pd.DataFrame.from_records([fdist.lmom_fit(peaks)]).loc[0]
         def _isf(pars):
-            return fdist(*pars).isf(frec/rp)
+            return fdist(*pars).isf(freq/rp) # 1(1-P) = freq / rp
         def _bootstrap_indexes(data, n_samples):
             return np.random.randint(data.shape[0], size=(n_samples, data.shape[0]))
         def _lm_fit(peaks):
-            return fdist.lmom_fit(peaks)
+            if peaks.std() > 0:
+                return fdist.lmom_fit(peaks)
+            else:
+                return par0*np.nan
         # estimate parameters using bootstrap sample
         bootindexes = _bootstrap_indexes(peaks, n_samples=n_samples)
         pars = pd.DataFrame.from_records(np.apply_along_axis(_lm_fit, arr=peaks[bootindexes], axis=-1))
-        par0 =  pd.DataFrame.from_records([_lm_fit(peaks)]).loc[0]
         bias = par0 - pars.mean()
         pars += bias
         # get ci
         stat = np.apply_along_axis(_isf, arr=pars.values, axis=-1)
         stat.sort(axis=0)
-        nvals = np.nan_to_num(np.round((n_samples-1)*alphas)).astype('int')
+        nvals = np.round((n_samples-1)*alphas).astype('int')
         ci = stat[nvals, ...]
     else:
         ci = np.ones((alphas.size, rp.size))*np.nan
     return ci
 
-def xlm_fit_ci(da_peaks, fdist=distr.gpa, nyears=None, rp=np.array([2,5,10,25]), 
+def xlm_fit_ci(da_peaks, fdist=distr.gum, nyears=None, rp=np.array([2,5,10,25]), 
                alphas=np.array([0.1, 0.9]), n_samples=10000, dim='time'):
     # confidence interval parameters
     kwargs = dict(

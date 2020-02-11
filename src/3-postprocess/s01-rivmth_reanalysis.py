@@ -1,3 +1,5 @@
+"""Create zarr archive from combined GTSM and CMF outputs for faster analysis"""
+
 import xarray as xr
 from os.path import join, basename
 from datetime import timedelta, datetime
@@ -93,3 +95,11 @@ chunks = {'ensemble':-1, 'scen':-1, 'time': -1, 'index':100}
 ds_out.attrs.update(glob_attrs)
 print(ds_out)
 ds_out.transpose('scen', 'ensemble', 'time', 'index').chunk(chunks).to_zarr(fn_zarr_out, mode='w')
+
+# write simple nc for online publishing
+drop_vars = ['Hseas_day_mean', 'Hseas', 'Hsurge', 'Hsurge_day_max', 'Hsurge_day_mean', 'Htide', 'Htide_day_max', 'Htide_day_min', 'Htot_day_mean',]
+rm_vars = {'Hskewsurge_day': 'Hskewsurge', 'Htot_day_max':'Htot_max'}
+ds = xr.open_zarr(join(ddir, 'rivmth_reanalysis.zarr')).drop(drop_vars).rename(rm_vars)
+ds['Q'] = ds['Q'].sel(scen='surge').drop('scen')
+encoding = {var: {'zlib': True} for var in ds.data_vars.keys()}
+ds.chunk({'time':-1}).to_netcdf(join(ddir, 'rivmth_reanalysis.nc'), encoding=encoding)

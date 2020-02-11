@@ -15,6 +15,16 @@ import rasterio.mask
 from shapely.geometry import box, mapping, LineString, Point
 import geopandas as gp
 
+class MidpointNormalize(Normalize):
+    def __init__(self, vmin=None, vmax=None, midpoint=None, clip=False):
+        self.midpoint = midpoint
+        Normalize.__init__(self, vmin, vmax, clip)
+
+    def __call__(self, value, clip=None):
+        # I'm ignoring masked values and all kinds of edge cases to make a
+        # simple example...
+        x, y = [self.vmin, self.midpoint, self.vmax], [0, 0.5, 1]
+        return np.ma.masked_array(np.interp(value, x, y), np.isnan(value))
  
 def interpolate_cmap(colormap, x):
     x = max(0.0, min(1.0, x))
@@ -128,7 +138,7 @@ def pandas2geopandas(df, x_col='lon', y_col='lat', crs=ccrs.PlateCarree.proj4_in
     geoms = [Point(x, y) for x, y in zip(df[x_col], df[y_col])]
     return gp.GeoDataFrame(df.drop([x_col, y_col], axis=1), geometry=geoms, crs=crs)
 
-def plot_choropleth(figl, axg, gdf, column, 
+def plot_choropleth(fig, axg, gdf, column, 
                     cmap=cmap_turbo, vmin=None, vmax=None, norm=None, cticks=None, discrete=False,
                     plot_kwargs={}, cbar_kwargs={}, cbar_pos={}):
     
@@ -136,15 +146,14 @@ def plot_choropleth(figl, axg, gdf, column,
     dmin, dmax = np.nanmin(gdf.loc[:, column].values), np.nanmax(gdf.loc[:, column].values)
     vmin = vmin if (vmin is not None) else dmin 
     vmax = vmax if (vmax is not None) else dmax
-    if discrete: #only linear
-        if cticks is None:
-            k = cbar_kwargs.get('k', 10)
-            cticks = np.linspace(vmin, vmax, k).tolist()
+    if cticks is None:
+        k = cbar_kwargs.get('k', 10)
+        cticks = np.linspace(vmin, vmax, k).tolist()
+    if discrete: #only linear   
         norm = BoundaryNorm(cticks, cmap.N)
     elif norm is None:
         norm = Normalize(vmin=vmin, vmax=vmax)
-    else:
-        norm = norm(vmin=vmin, vmax=vmax)
+
     if isinstance(cmap, str):
         cmap = Colormap(cmap)
     
@@ -154,29 +163,37 @@ def plot_choropleth(figl, axg, gdf, column,
     # plot colorbar
     cax = None
     if cbar_kwargs:
+        # fig = plt.gcf()
         location = cbar_kwargs.pop('location', 'bottom')
         clabel = cbar_kwargs.pop('label', '')
-        cbar_kwargs.update(ticks=cticks, boundaries=cticks if discrete else None)
-        if 'extend' not in cbar_kwargs:
-            if (dmax > vmax) and (dmin < vmin):
-                cbar_kwargs.update(extend='both')
-            elif dmax > vmax:
-                cbar_kwargs.update(extend='max')
-            elif dmin < vmin:
-                cbar_kwargs.update(extend='min')
+        extend  = cbar_kwargs.pop('extend', None)
+        pad = cbar_pos.get('pad', 0.05)
+        fraction = cbar_pos.get('fraction', 0.02)
+        shrink = cbar_pos.get('shrink', 1)
+        if extend == 'both' or (extend is None and ((dmax > vmax) and (dmin < vmin))):
+            cbar_kwargs.update(extend='both', ticks=cticks, boundaries=[dmin] + cticks + [dmax] if discrete else None)
+        elif extend == 'max' or (extend is None and dmax > vmax):
+            cbar_kwargs.update(extend='max', ticks=cticks, boundaries=cticks + [dmax] if discrete else None)
+        elif extend == 'min' or (extend is None and dmin < vmin):
+            cbar_kwargs.update(extend='min', ticks=cticks, boundaries=[dmin] + cticks if discrete else None)
+        else:
+            cbar_kwargs.update(ticks=cticks, boundaries=cticks if discrete else None)
         if location == 'right':
-            cax, kw = mpl.colorbar.make_axes_gridspec(axg, orientation='vertical', **cbar_pos)
+            # print(cbar_kwargs)
+            # cax, _ = mpl.colorbar.make_axes_gridspec(axg, orientation='vertical', **cbar_pos)
+            cax = fig.add_axes([1, 1, 0.1, 0.1]) # new ax
             cbar = mpl.colorbar.ColorbarBase(cax, cmap=cmap, norm=norm, **cbar_kwargs)
             cbar.ax.set_ylabel(clabel, rotation='vertical')
-            
-            cpos = cax.get_position()
             gpos = axg.get_position()
-            cax.set_position([cpos.x0, gpos.y0, cpos.width, gpos.height])
+            cax.set_position([gpos.x1+pad, gpos.y0+gpos.height*(1-shrink)/2., gpos.width*fraction, gpos.height*shrink])
 
         elif location == 'bottom':
-            cax, kw = mpl.colorbar.make_axes_gridspec(axg, orientation='horizontal', **cbar_pos)
+            # cax, _ = mpl.colorbar.make_axes_gridspec(axg, orientation='horizontal', **cbar_pos)
+            cax = fig.add_axes([1, 1, 0.1, 0.1]) # new ax
             cbar = mpl.colorbar.ColorbarBase(cax, cmap=cmap, norm=norm, orientation='horizontal', **cbar_kwargs)
             cbar.ax.set_xlabel(clabel)
+            gpos = axg.get_position()
+            cax.set_position([gpos.x0+gpos.width*(1-shrink)/2., gpos.y0-pad, gpos.width*shrink, gpos.height*fraction])
         else:
             raise ValueError('unknown value for "location"')
     return cax

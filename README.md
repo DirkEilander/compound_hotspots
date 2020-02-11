@@ -1,24 +1,23 @@
 compound_hotspots
 ==============================
 
-This is a scenario analysis to find where and to what extent water level peaks in rivers are exacerbated by interactions with downstream surge.
+
+
 
 Project Organization
 --------------------
 
     .
-    ├── AUTHORS.md
     ├── LICENSE
     ├── README.md
     ├── bin
     ├── config
-    ├── data
+    ├── data (not online)
     │   ├── 1-external
     │   ├── 2-preprocessed
     │   ├── 3-model_output
     │   └── 4-postprocessed
-    ├── docs
-    ├── reports
+    ├── reports (not online)
     │   └── figures
     └── src
         ├── 0-external

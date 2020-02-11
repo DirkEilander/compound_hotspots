@@ -12,8 +12,7 @@ import rasterio
 import numpy as np
 # local libraries
 from cmftools.cmf_index import model_xy, outlet_xy, model_index
-from .nbops.nb_io import read_dd_raster
-from .nbops.dd_ops import catchment_map
+from .nb import read_dd_rasterio, catchment_map
 
 
 def get_outlets(fn_nextxy, fn_lonlat, sample_dict={}, fn_out=None, 
@@ -24,7 +23,7 @@ def get_outlets(fn_nextxy, fn_lonlat, sample_dict={}, fn_out=None,
     for fn in [fn_nextxy, fn_lonlat]:
         if not os.path.isfile(fn): 
             raise IOError("{} file not found".format(fn))
-    nextxy = read_dd_raster(fn_nextxy, ddtype='nextxy')
+    nextxy = read_dd_rasterio(fn_nextxy, ddtype='nextxy')
     row, col = nextxy.get_pits()
     lon, lat, _ = outlet_xy(row, col, fn_lonlat)
     lon_lr, lat_lr, _ = model_xy(row, col, fn_lonlat=fn_lonlat)

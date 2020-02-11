@@ -48,9 +48,9 @@ def set_bin_inputs(sdir, fn_swe, rps=np.array([2,10,50])):
 
     # read nc and calc flddph
     swe = xr.open_dataset(fn_swe)['sfcelv_ev']
-    # flddph = swe - elevtn 
+    flddph = swe - elevtn 
     # TODO bias correction with flddph for T=1.5 ??
-    flddph = swe - swe.sel(T=1.5)
+    # flddph = swe - swe.sel(T=1.5)
     flddph = xr.where(flddph<0,0,flddph).fillna(mv)
 
     # write to file per rp
@@ -63,7 +63,7 @@ def set_bin_inputs(sdir, fn_swe, rps=np.array([2,10,50])):
         # import pdb; pdb.set_trace()
 
 
-def downscale_flddph(sdir, ddir, rps=np.array([2,10,50])):
+def downscale_flddph(sdir, out_dir, rps=np.array([2,10,50])):
     mv=1e+20
     nodata=-9999.
     bbox = -180., -90., 180., 90.
@@ -85,7 +85,7 @@ def downscale_flddph(sdir, ddir, rps=np.array([2,10,50])):
         'interleave': 'band'
     }
 
-    out_dir = join(ddir, 'flddph')
+    # out_dir = join(ddir, 'flddph')
     if not os.path.isdir(out_dir):
         os.makedirs(out_dir)
 
@@ -96,7 +96,7 @@ def downscale_flddph(sdir, ddir, rps=np.array([2,10,50])):
     for T in rps:
         fn_out_tif = join(out_dir, f'flddph_T{T:03.0f}.tif')
         fn_flddph_bin = join(sdir, f'flddph_T{T:03.0f}')
-        # if os.path.isfile(fn_out_tif): continue
+        if os.path.isfile(fn_out_tif): continue
         print(f'rp: {T:03.1f}')        
         with rasterio.open(fn_out_tif, 'w', **profile) as dst:
             pass # write empty file
@@ -137,7 +137,7 @@ def downscale_flddph(sdir, ddir, rps=np.array([2,10,50])):
                 print(' '.join(msg))
 
 
-def flood_impact(sdir, ddir, rps=np.array([2,10,50]), exp_name='worldpop'):
+def flood_impact(sdir, out_dir, rps=np.array([2,10,50]), exp_name='worldpop'):
     mv=1e+20
     nodata=-9999.
     bbox = -180., -90., 180., 90.
@@ -159,7 +159,7 @@ def flood_impact(sdir, ddir, rps=np.array([2,10,50]), exp_name='worldpop'):
         'interleave': 'band'
     }
 
-    out_dir = join(ddir, 'impact')
+    # out_dir = join(ddir, 'impact')
     if not os.path.isdir(out_dir):
         os.makedirs(out_dir)
 
@@ -177,7 +177,7 @@ def flood_impact(sdir, ddir, rps=np.array([2,10,50]), exp_name='worldpop'):
         fn_flddph_bin = join(sdir, f'flddph_T{T:03.0f}')
         fn_out_tif_agg = join(out_dir, f'{exp_name}_agg_T{T:03.0f}.tif')
         fn_out_tif = join(out_dir, f'{exp_name}_T{T:03.0f}.tif')
-        # if os.path.isfile(fn_out_tif_agg): continue
+        if os.path.isfile(fn_out_tif_agg): continue
         
         # output
         data_agg = np.zeros(shape, dtype=np.float32)
@@ -196,7 +196,7 @@ def flood_impact(sdir, ddir, rps=np.array([2,10,50]), exp_name='worldpop'):
             if os.path.isfile(fn_impact_agg):
                 with open(fn_impact_agg, 'r') as fid:
                     data0 = np.fromfile(fid, 'f4').reshape(shape)
-                    data0 = np.where(data0==mv, nodata, data0)
+                    data0 = np.where(data0==mv, 0, data0)
                     data_agg += data0
                 # remove binary output
                 os.unlink(fn_impact_agg)
@@ -251,31 +251,39 @@ if __name__ == "__main__":
     elevtn = xr.open_rasterio(join(sdir, 'map', 'elevtn.tif')).drop('band').squeeze().rename(rm)
     landmask = elevtn != -9999
 
-    for scen in ['cmpnd', 'runoff']:
-        ddir0 = join(ddir, f'anu_mswep_{scen}_v362_1980-2014')
-        fn_out = join(ddir0, f'ev_map_sfcelv.nc')
-        # if not os.path.isfile(fn_out):
-        ev_map(
-            ddir = ddir0, 
-            fn_out = fn_out,
-            var = 'sfcelv',
-            mask = landmask,
+    for mod in ['anu', 'cnrs', 'ecmwf', 'jrc', 'nerc']:
+        for scen in ['cmpnd', 'runoff'][:1]:
+            # ddir0 = join(ddir, f'anu_mswep_{scen}_v362_1980-2014')
+            # fn_out = join(ddir0, f'ev_map_sfcelv.nc')
+            # if not os.path.isfile(fn_out):
+            #     print('extreme value analysis ..')
+            #     print(basename(fn_out))
+            #     ev_map(
+            #         ddir = ddir0, 
+            #         fn_out = fn_out,
+            #         var = 'sfcelv',
+            #         mask = landmask,
+            #         )
+                    
+            fn_swe = join(ddir, f'ev_map_sfcelv_{mod}_mswep_{scen}_v362_1980-2014.nc')
+            out_dir = join(ddir, f'{mod}_{scen}')
+            print(basename(out_dir))
+            rps = np.array([2, 10, 50, 100])
+
+            print('preparing binary input for fortran routines ..')
+            set_bin_inputs(sdir, fn_swe, rps=rps)
+
+            print('downscaling flddph ..')
+            downscale_flddph(
+                sdir = sdir, 
+                out_dir = out_dir,
+                rps = rps,
             )
-        print('preparing binary input for fortran routines ..')
-        fn_swe = join(ddir0, f'ev_map_sfcelv.nc')
-        set_bin_inputs(sdir, fn_swe)
 
-        print('downscaling flddph ..')
-        downscale_flddph(
-            sdir = sdir, 
-            ddir = ddir0,
-            rps=np.array([2, 10, 50, 100]),
-        )
-
-        print('impact assessment ..')
-        flood_impact(
-            sdir = sdir, 
-            ddir = ddir0,
-            rps=np.array([2, 10, 50, 100]),
-            exp_name= 'worldpop'
-        )
+            print('impact assessment ..')
+            flood_impact(
+                sdir = sdir, 
+                out_dir = out_dir,
+                rps = rps,
+                exp_name= 'worldpop'
+            )

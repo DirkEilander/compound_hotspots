@@ -27,7 +27,7 @@ if __name__ == '__main__':
     
     # qsub info
     submit=True
-    ijob_start = 28
+    ijob_start = 34
     njobs_per_node = 2
     parallel = True
     hrsyr = 4  # hrs per model year
@@ -38,13 +38,13 @@ if __name__ == '__main__':
     precommand_form = 'source ~/.bashrc \nexport OMP_NUM_THREADS={:d} \nOUTDIR="{}"'
 
     # runs
-    data_sources = ['anu', 'cnrs', 'ecmwf', 'jrc', 'nerc'] #, 'univu', 'univk']
-    sealvl_bound = ['act', 'cli', 'act', 'tide', 'msl'][-2:-1]
-    runoff_bound = ['act', 'act', 'cli', 'act', 'act'][-2:-1]
-    experiment   = ['cmpnd', 'runoff', 'surge', 'tide', 'msl'][-2:-1]
-    # experiment   = ['tide+clime+surge', 'tide+clim', None, 'tide', 'msl'][:-1]
+    data_sources = ['anu', 'cnrs', 'ecmwf', 'jrc', 'nerc'][:1] #, 'univu', 'univk']
+   
+    sealvl_bound = ['cli',    'act',    'act',   'tide', 'msl'][1:-1]
+    runoff_bound = ['act',    'act',    'cli',   'act',  'act'][1:-1]
+    experiment   = ['runoff', 'cmpnd',  'surge', 'tide', 'msl'][1:-1]
 
-    
+    # PDSTMTH
     # variables per run
     spinup, start_year, end_year = 2, 1980, 2014 # make sure this is the same as in the ini file!
     dsbnd_fns = {
@@ -63,73 +63,35 @@ if __name__ == '__main__':
         'tide': ['LBOUNDSL=true', 'DT=1800', 'CBNDCDFVAR=tide'],
         'msl': [],
     }
-    nam_args = []
-    postfix = '_' + '_'.join([a[1:].lower().replace('=','') for a in nam_args]) if nam_args else ''
-    name_temp = '{data}_mswep_{experiment}_v362_1980-2014' + postfix
-    command_temp = 'python cmf_run2.py {ini_fn} {name} -o "$OUTDIR" -t "$TMPDIR" --runoff-fn "{runoff_fn}" --dsbnd-fn "{dsbnd_fn}" {nam_args} --restart --local-io'
 
+
+    # main job
+    command_temp = 'python cmf_run2.py {ini_fn} {name} -o "$OUTDIR" -t "$TMPDIR" --runoff-fn "{runoff_fn}" --dsbnd-fn "{dsbnd_fn}" {nam_args} --restart --local-io'
     # postprocessing 
     settings_json = join(cwd, 'postprocessing_compound.json')
     postcommand_temp = 'python cmf_postprocess.py  {settings_json} {datadirs} -t "$TMPDIR" -n 1 --force-overwrite'
-
-    # # runs per year
-    # command_temp = 'python cmf_run2.py {ini_fn} {name} -o "$OUTDIR" -t "$TMPDIR/{yr}" --runoff-fn "{runoff_fn}" --dsbnd-fn "{dsbnd_fn}" {nam_args} -y {yr} --local-io'
-    # runs = []
-    # for data in data_sources:
-    #     for roff, dsbnd, exp in zip(runoff_bound, sealvl_bound, experiment):
-    #         name = name_temp.format(data=data, experiment=exp)
-    #         nam_args_str = ' '.join(['--nam {}'.format(arg) for arg in nam_args + dsbnd_args[dsbnd]])
-    #         for yr in range(start_year, end_year+1):
-    #             checkfiles = []
-    #             for vname in  ['outflw', 'rivdph', 'sfcelv', 'flddph']:
-    #                 checkfiles.append(isfile(join(outdir, name, '{}{}.nc'.format(vname, yr))))
-    #             if not isfile(join(outdir, name, 'restart', 'restart{}0101.nc'.format(yr))):
-    #                 print(name, yr)
-    #                 import pdb; pdb.set_trace()
-    #             if not np.all(checkfiles):
-    #                 runoff_fn0 = runoff_fns[roff].format(data=data, year='{}'.format(yr))
-    #                 dsbnd_fn0 = dsbnd_fns[dsbnd].format(year='{}'.format(yr))
-    #                 runs.append(
-    #                     command_temp.format(ini_fn=ini_fn, name=name, runoff_fn=runoff_fn0, dsbnd_fn=dsbnd_fn0, nam_args=nam_args_str, yr=yr)
-    #                 )
-    # print(len(runs))
-    # commands, times = [], []    
-    # ijob = ijob_start
-    # for i in range(len(runs)):
-    #     commands.append(runs[i])
-    #     if (i+1) % njobs_per_node == 0:
-    #         # pre
-    #         precommand = precommand_form.format( int(16/len(commands)) if parallel else 16, outdir)
-    #         # main
-    #         walltime = hrsyr
-    #         command = ' &\n'.join(commands) if parallel else ' \n'.join(commands)
-    #         # post
-    #         qsub('cmpnd{:03d}'.format(ijob), command, drm=drm, workdir=cwd, jobdir=jobdir, 
-    #             lwalltime=min(walltime,120), args=pbs_args, modules=modules, 
-    #             precommand=precommand, submit=submit, force_overwrite=True, verbose=False)
-    #         commands = []
-    #         ijob += 1
-    #         # break
-
-
-
+    
     runs, irun = [], 0
-    for roff, dsbnd, exp in zip(runoff_bound, sealvl_bound, experiment):
-        for data in data_sources:
-            name = name_temp.format(data=data, experiment=exp)
-            run_outdir = join(outdir, name)
-            year0 = check_restart(run_outdir, year=start_year)
-            nyears = end_year + 1 - start_year + spinup if year0 == start_year else end_year + 1 - year0 
-            if nyears >= 0:
-                runs.append((name, run_outdir, data, roff, dsbnd, exp, nyears))
-                print('{:02d}: {:s} - {:d} years'.format(irun+1, name, nyears))
-                irun += 1
+    for nam_args in [['PDSTMTH=12500'], ['PDSTMTH=7500']]:
+        postfix = '_' + '_'.join([a[1:].lower().replace('=','') for a in nam_args]) if nam_args else ''
+        name_temp = '{data}_mswep_{experiment}_v362_1980-2014' + postfix
+
+        for roff, dsbnd, exp in zip(runoff_bound, sealvl_bound, experiment):
+            for data in data_sources:
+                name = name_temp.format(data=data, experiment=exp)
+                run_outdir = join(outdir, name)
+                year0 = check_restart(run_outdir, year=start_year)
+                nyears = end_year + 1 - start_year + spinup if year0 == start_year else end_year + 1 - year0 
+                if nyears >= 0:
+                    runs.append((name, run_outdir, data, roff, dsbnd, exp, nyears, nam_args))
+                    print('{:02d}: {:s} - {:d} years'.format(irun+1, name, nyears))
+                    irun += 1
 
     if len(runs) > 0:
         seq = np.arange(irun) #np.argsort(np.array([run[-1] for run in runs]))
         commands, postcommands, times, nyears, ijob = [], [], [], [], ijob_start
         for i in seq:
-            name, run_outdir, data, roff, dsbnd, exp, nyr = runs[i]
+            name, run_outdir, data, roff, dsbnd, exp, nyr, nam_args = runs[i]
             runoff_fn0 = runoff_fns[roff].format(data=data, year='{year}')
             dsbnd_fn = dsbnd_fns[dsbnd]
             nam_args_str = ' '.join(['--nam {}'.format(arg) for arg in nam_args + dsbnd_args[dsbnd]])

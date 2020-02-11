@@ -9,16 +9,30 @@ import dask.bag as db
 import warnings
 warnings.simplefilter("ignore")
 
+from scipy.interpolate import interp1d
 
+from scipy.stats import rankdata
 def weibull(peaks, nyears=None):
     peaks = peaks[np.isfinite(peaks)]
-    peaks_rank = stats.rankdata(-1 * peaks, method='ordinal')
-    if nyears is not None:
-        frec = peaks.size / nyears 
-    else:
-        frec = 1.
-    rp = float((peaks.size/frec)+1) / peaks_rank
-    return rp, peaks
+    peaks_rank = rankdata(peaks, 'ordinal')
+    P = peaks_rank/(peaks.size+1)
+    freq = 1. if nyears is None else peaks.size / nyears
+    rp = 1/(1-P) * 1/freq
+    return rp
+
+def _interp_ev(peaks, vals, nyears=None):
+    peaks = peaks[np.isfinite(peaks)]
+    peaks.sort()
+    peaks_rank = np.arange(peaks.size)+1
+    P = peaks_rank/(peaks.size+1)
+    freq = 1. if nyears is None else peaks.size / nyears
+    rp = 1/(1-P)/freq
+    kwargs = dict(
+        kind='linear', bounds_error=False, assume_sorted=True,
+        fill_value=(rp.min(), rp.max())
+    )
+    rp_out = interp1d(peaks, rp, **kwargs)(vals)
+    return rp_out
 
 def _lm_fit(peaks, rp, fdist=distr.gpa, nyears=None):
     peaks = peaks[np.isfinite(peaks)]
@@ -54,19 +68,6 @@ def _lm_fit_ci(peaks, rp, fdist=distr.gpa, nyears=None, n_samples=1000, alphas=n
     nvals = np.nan_to_num(np.round((n_samples-1)*alphas)).astype('int')
     ci = stat[nvals, ...]    
     return ci
-
-def _interp_ev(peaks, vals, nyears):
-    peaks = peaks[np.isfinite(peaks)]
-    peaks.sort()
-    rps, peaks = weibull(peaks, nyears=nyears)
-    logrps = np.log10(rps)
-    kwargs = dict(
-        kind='linear', bounds_error=False, assume_sorted=True,
-        # fill_value=(logrps.min(), logrps.max())
-        fill_value=np.nan
-    )
-    rp_out = 10**interp1d(peaks, np.log10(rps), **kwargs)(vals)
-    return rp_out
 
 def _interp_rps(peaks, rp, nyears):
     peaks = peaks[np.isfinite(peaks)]
