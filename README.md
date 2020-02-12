@@ -1,17 +1,15 @@
 compound_hotspots
 ==============================
-
+Experiments and analysis for manuscript "The effect of surge on riverine flood hazard and impact in deltas globally" by Eilander et al (in review)
 
 
 
 Project Organization
 --------------------
-
     .
-    ├── LICENSE
     ├── README.md
-    ├── bin
-    ├── config
+    ├── LICENSE
+    ├── environment.yml
     ├── data (not online)
     │   ├── 1-external
     │   ├── 2-preprocessed
@@ -25,4 +23,3 @@ Project Organization
         ├── 2-experiment
         ├── 3-postprocess
         ├── 4-analyze
-        └── tools
