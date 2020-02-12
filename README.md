@@ -1,4 +1,4 @@
-[![DOI](https://zenodo.org/badge/192187327.svg)]()
+[![DOI](https://zenodo.org/badge/240121255.svg)](https://zenodo.org/badge/latestdoi/240121255)
 
 compound_hotspots
 ==============================
