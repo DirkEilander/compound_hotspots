@@ -97,9 +97,58 @@ print(ds_out)
 ds_out.transpose('scen', 'ensemble', 'time', 'index').chunk(chunks).to_zarr(fn_zarr_out, mode='w')
 
 # write simple nc for online publishing
-drop_vars = ['Hseas_day_mean', 'Hseas', 'Hsurge', 'Hsurge_day_max', 'Hsurge_day_mean', 'Htide', 'Htide_day_max', 'Htide_day_min', 'Htot_day_mean',]
-rm_vars = {'Hskewsurge_day': 'Hskewsurge', 'Htot_day_max':'Htot_max'}
-ds = xr.open_zarr(join(ddir, 'rivmth_reanalysis.zarr')).drop(drop_vars).rename(rm_vars)
+drop_vars = ['Hseas', 'Hsurge_day_mean', 'Htide', 'Htide_day_min', 'Htot_day_mean',]
+rm_vars = {
+    'Htot_day_max':'Htot_max', 
+    'Hseas_day_mean': 'Hseas', 
+    'Hskewsurge_day': 'Hskewsurge', 
+    'Hsurge_day_max': 'Hsurge_max', 
+    'Htide_day_max': 'Htide_max'
+    }
+ds = xr.open_zarr(fn_zarr_out).drop(drop_vars).rename(rm_vars)
 ds['Q'] = ds['Q'].sel(scen='surge').drop('scen')
+ds['WSE'].attrs.update(
+    long_name = 'water surface elevation',
+    unit = 'm+EGM96',
+    description = 'with CaMa-Flood simulated water surface elevation'
+)
+ds['z0'].attrs.update(
+    long_name = 'river bed elevation',
+    unit = 'm+EGM96',
+    description = 'CaMa-Flood river bed elevation'
+)
+ds['Q'].attrs.update(
+    long_name = 'river discharge',
+    unit = 'm3.s-1',
+    description = 'with CaMa-Flood simulated discharge (surge experiment)'
+)
+ds['Htot_max'].attrs.update(
+    long_name = 'daily maximum total still water level',
+    unit = 'm+EGM96',
+    description = 'linearly combined GTSM surge levels and FES2012 tide levels'
+)
+ds['Htide_max'].attrs.update(
+    long_name = 'daily maximum tide level',
+    unit = 'm+EGM96',
+    description = 'FES2012 tide levels'
+)
+ds['Hseas'].attrs.update(
+    long_name = 'seasonal surge level component',
+    unit = 'm',
+    description = 'seasonal component of GTSM surge levels'
+)
+ds['Hskewsurge'].attrs.update(
+    long_name = 'skew surge',
+    unit = 'm',
+    description = 'difference between daily maximum still water and maximum tide levels'
+)
+ds['scen'].attrs.update(
+    long_name = 'scenarios',
+    description = 'simulation scenarios with different downsteam sea level boundaries'
+)
+ds['ensemble'].attrs.update(
+    long_name = 'ensemble',
+    description = 'eartH2Observe multi-model ensemble'
+)
 encoding = {var: {'zlib': True} for var in ds.data_vars.keys()}
-ds.chunk({'time':-1}).to_netcdf(join(ddir, 'rivmth_reanalysis.nc'), encoding=encoding)
+ds.chunk({'time':-1}).to_netcdf(fn_zarr_out.replace('.zarr','.nc'), encoding=encoding)

@@ -6,6 +6,7 @@ dependencies:
   - cartopy=0.17.0
   - cmocean=2.0
   - dask=2.10.1
+  - descartes-1.1.0
   - geopandas=0.6.3
   - joblib=0.14.1
   - jupyter=1.0.0

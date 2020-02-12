@@ -17,7 +17,7 @@ wdw=1
 
 # I/O
 fn_in = join(ddir, 'rivmth_reanalysis.zarr')
-fn_out = join(ddir, f'rivmth_drivers.nc')
+fn_out = join(ddir, f'rivmth_drivers_wdw{wdw}.nc')
 
 
 scenarios = ['surge']
